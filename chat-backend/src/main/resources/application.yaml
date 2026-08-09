@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: chat-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chat_db
+    username: postgres
+    password: root
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+jwt:
+  secret: "7fK3mP9xQ2vL8nR4tY6wZ1aB5cD9eF2gH7jK4mN8pQ3sV6x"
+  expiration: 3600000
