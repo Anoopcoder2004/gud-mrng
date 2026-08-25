@@ -20,3 +20,4 @@ public interface MessageRepository extends JpaRepository<Messages, Long> {
             @Param("otherUserId") Long otherUserId
     );
 }
+// test
