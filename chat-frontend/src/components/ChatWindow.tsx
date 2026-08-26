@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import api from "../services/api";
+import {
+  connectWebSocket,
+  disconnectWebSocket,
+  sendWebSocketMessage
+} from "../services/websocket";
 
 interface Message {
   id: number;
@@ -21,20 +26,126 @@ function ChatWindow({
   currentUserId
 }: ChatWindowProps) {
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [content, setContent] = useState("");
+  const [messages, setMessages] =
+    useState<Message[]>([]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [content, setContent] =
+    useState("");
 
+  const messagesEndRef =
+    useRef<HTMLDivElement>(null);
+
+
+  /*
+   * Load previous conversation
+   */
   useEffect(() => {
+
     getMessages();
+
   }, [userId]);
 
+
+  /*
+   * Connect WebSocket
+   */
   useEffect(() => {
-    scrollToBottom();
+
+    // 🔥 CHANGED
+    if (!currentUserId) {
+      return;
+    }
+
+    connectWebSocket(
+      currentUserId,
+
+      (incomingMessage: Message) => {
+
+        console.log(
+          "🔥 Incoming WebSocket message:",
+          incomingMessage
+        );
+
+        /*
+         * Only update the currently selected
+         * conversation.
+         */
+        const belongsToCurrentChat =
+          (
+            incomingMessage.senderId === userId &&
+            incomingMessage.receiverId === currentUserId
+          )
+          ||
+          (
+            incomingMessage.senderId === currentUserId &&
+            incomingMessage.receiverId === userId
+          );
+
+        // 🔥 CHANGED
+        if (!belongsToCurrentChat) {
+          return;
+        }
+
+        // 🔥 CHANGED
+        setMessages((previousMessages) => {
+
+          /*
+           * Prevent duplicate messages.
+           *
+           * This is useful because the REST API and
+           * WebSocket can both contain the same message.
+           */
+          const alreadyExists =
+            previousMessages.some(
+              (message) =>
+                message.id === incomingMessage.id
+            );
+
+          if (alreadyExists) {
+            return previousMessages;
+          }
+
+          console.log(
+            "🔥 Adding WebSocket message to UI:",
+            incomingMessage
+          );
+
+          return [
+            ...previousMessages,
+            incomingMessage
+          ];
+
+        });
+
+      }
+    );
+
+    return () => {
+
+      disconnectWebSocket();
+
+    };
+
+  }, [currentUserId, userId]);
+
+
+  /*
+   * Scroll to latest message
+   */
+  useEffect(() => {
+
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth"
+    });
+
   }, [messages]);
 
+
+  /*
+   * Get previous messages
+   */
   const getMessages = async () => {
+
     try {
 
       const response = await api.get(
@@ -51,50 +162,48 @@ function ChatWindow({
       );
 
     }
+
   };
 
-  const sendMessage = async () => {
 
-    if (!content.trim()) {
+  /*
+   * Send live message
+   */
+  const sendMessage = () => {
+
+    const trimmedContent =
+      content.trim();
+
+    if (!trimmedContent) {
       return;
     }
 
-    try {
+    console.log(
+      "🔥 Sending WebSocket message:",
+      trimmedContent
+    );
 
-      const response = await api.post(
-        "/api/messages",
-        {
-          receiverId: userId,
-          content: content
-        }
-      );
+    sendWebSocketMessage(
+      userId,
+      trimmedContent
+    );
 
-      setMessages((previousMessages) => [
-        ...previousMessages,
-        response.data
-      ]);
+    // 🔥 CHANGED
+    // Do NOT add the message here.
+    //
+    // Backend saves the message and sends it
+    // back through WebSocket.
+    //
+    // The WebSocket callback above will update
+    // the UI.
 
-      setContent("");
-
-    } catch (error) {
-
-      console.error(
-        "Failed to send message:",
-        error
-      );
-
-    }
-  };
-
-  const scrollToBottom = () => {
-
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth"
-    });
+    setContent("");
 
   };
+
 
   return (
+
     <div className="chat-window">
 
       {/* HEADER */}
@@ -102,7 +211,11 @@ function ChatWindow({
       <div className="chat-header">
 
         <div className="avatar">
-          {username.charAt(0).toUpperCase()}
+
+          {username
+            .charAt(0)
+            .toUpperCase()}
+
         </div>
 
         <div className="chat-user-info">
@@ -115,6 +228,7 @@ function ChatWindow({
 
       </div>
 
+
       {/* MESSAGES */}
 
       <div className="messages">
@@ -125,6 +239,7 @@ function ChatWindow({
             message.senderId === currentUserId;
 
           return (
+
             <div
               key={message.id}
               className={`message-row ${
@@ -143,21 +258,26 @@ function ChatWindow({
               >
 
                 <div className="message-content">
+
                   {message.content}
+
                 </div>
 
                 <div className="message-time">
+
                   {new Date(
                     message.createdAt
                   ).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit"
                   })}
+
                 </div>
 
               </div>
 
             </div>
+
           );
 
         })}
@@ -165,6 +285,7 @@ function ChatWindow({
         <div ref={messagesEndRef} />
 
       </div>
+
 
       {/* INPUT */}
 
@@ -178,9 +299,11 @@ function ChatWindow({
             setContent(e.target.value)
           }
           onKeyDown={(e) => {
+
             if (e.key === "Enter") {
               sendMessage();
             }
+
           }}
         />
 
@@ -191,7 +314,9 @@ function ChatWindow({
       </div>
 
     </div>
+
   );
+
 }
 
 export default ChatWindow;
