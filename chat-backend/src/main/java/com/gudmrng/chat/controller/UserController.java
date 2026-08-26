@@ -26,4 +26,14 @@ public class UserController {
 
         return userService.getUsers(email, pageable);
     }
+
+    // ⭐ NEW
+    @GetMapping("/me")
+    public UserResponse getCurrentUser(
+            Authentication authentication) {
+
+        String email = authentication.getName();
+
+        return userService.getCurrentUser(email);
+    }
 }
