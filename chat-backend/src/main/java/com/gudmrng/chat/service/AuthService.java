@@ -7,6 +7,7 @@ import com.gudmrng.chat.dto.RegisterResponse;
 import com.gudmrng.chat.entity.User;
 import com.gudmrng.chat.repository.UserRepository;
 import com.gudmrng.chat.security.JwtService;
+import com.gudmrng.chat.exception.InvalidCredentialsException;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -54,7 +55,8 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail());
 
         if (user == null) {
-            throw new RuntimeException("Invalid email or password");
+            throw new InvalidCredentialsException(
+                "Invalid email or password");
         }
 
         boolean passwordMatches = passwordEncoder.matches(
@@ -62,7 +64,8 @@ public class AuthService {
                 user.getPasswordHash());
 
         if (!passwordMatches) {
-            throw new RuntimeException("Invalid email or password");
+           throw new InvalidCredentialsException(
+                "Invalid email or password");
         }
 
         String token = jwtService.generateToken(user.getEmail());
