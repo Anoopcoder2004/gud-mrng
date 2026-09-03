@@ -5,7 +5,8 @@ let stompClient: Client | null = null;
 
 export const connectWebSocket = (
   userId: number,
-  onMessageReceived: (message: any) => void
+  onMessageReceived: (message: any) => void,
+  onTypingReceived: (typing: any) => void
 ) => {
 
   const token = localStorage.getItem("token");
@@ -24,8 +25,12 @@ export const connectWebSocket = (
 
       console.log("WebSocket connected");
 
+      // =========================
+      // CHAT MESSAGES
+      // =========================
+
       stompClient?.subscribe(
-    "/user/queue/messages",
+        "/user/queue/messages",
         (message: IMessage) => {
 
           console.log(
@@ -38,10 +43,35 @@ export const connectWebSocket = (
           onMessageReceived(data);
         }
       );
+
+
+      // =========================
+      // TYPING INDICATOR
+      // =========================
+
+      stompClient?.subscribe(
+        "/user/queue/typing",
+        (message: IMessage) => {
+
+          console.log(
+            "⌨️ TYPING RECEIVED:",
+            message.body
+          );
+
+          const data = JSON.parse(message.body);
+
+          onTypingReceived(data);
+        }
+      );
+
     },
 
     onDisconnect: () => {
-      console.log("WebSocket disconnected");
+
+      console.log(
+        "WebSocket disconnected"
+      );
+
     },
 
     onStompError: (frame) => {
@@ -53,11 +83,16 @@ export const connectWebSocket = (
 
       console.error(frame.body);
     }
+
   });
 
   stompClient.activate();
 };
 
+
+// =================================
+// SEND CHAT MESSAGE
+// =================================
 
 export const sendWebSocketMessage = (
   receiverId: number,
@@ -86,13 +121,45 @@ export const sendWebSocketMessage = (
 };
 
 
+// =================================
+// SEND TYPING STATUS
+// =================================
+
+export const sendTypingStatus = (
+  receiverId: number,
+  isTyping: boolean
+) => {
+
+  if (!stompClient?.connected) {
+
+    console.error(
+      "WebSocket is not connected"
+    );
+
+    return;
+  }
+
+  stompClient.publish({
+
+    destination: "/app/typing",
+
+    body: JSON.stringify({
+      receiverId,
+      isTyping
+    })
+
+  });
+
+};
+
+
+// =================================
+// DISCONNECT
+// =================================
+
 export const disconnectWebSocket = () => {
-
   if (stompClient) {
-
     stompClient.deactivate();
-
     stompClient = null;
-
   }
 };

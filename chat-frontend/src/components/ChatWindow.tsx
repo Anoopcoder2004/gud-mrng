@@ -3,7 +3,8 @@ import api from "../services/api";
 import {
   connectWebSocket,
   disconnectWebSocket,
-  sendWebSocketMessage
+  sendWebSocketMessage,
+  sendTypingStatus
 } from "../services/websocket";
 
 interface Message {
@@ -12,6 +13,12 @@ interface Message {
   receiverId: number;
   content: string;
   createdAt: string;
+}
+
+interface TypingStatus {
+  senderId: number;
+  senderUsername: string;
+  typing: boolean;
 }
 
 interface ChatWindowProps {
@@ -32,6 +39,14 @@ function ChatWindow({
   const [content, setContent] =
     useState("");
 
+  // 🔥 NEW
+  const [isTyping, setIsTyping] =
+    useState(false);
+
+  // 🔥 NEW
+  const typingTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const messagesEndRef =
     useRef<HTMLDivElement>(null);
 
@@ -51,13 +66,17 @@ function ChatWindow({
    */
   useEffect(() => {
 
-    // 🔥 CHANGED
     if (!currentUserId) {
       return;
     }
 
     connectWebSocket(
+
       currentUserId,
+
+      // =========================
+      // MESSAGE RECEIVED
+      // =========================
 
       (incomingMessage: Message) => {
 
@@ -66,10 +85,6 @@ function ChatWindow({
           incomingMessage
         );
 
-        /*
-         * Only update the currently selected
-         * conversation.
-         */
         const belongsToCurrentChat =
           (
             incomingMessage.senderId === userId &&
@@ -81,20 +96,12 @@ function ChatWindow({
             incomingMessage.receiverId === userId
           );
 
-        // 🔥 CHANGED
         if (!belongsToCurrentChat) {
           return;
         }
 
-        // 🔥 CHANGED
         setMessages((previousMessages) => {
 
-          /*
-           * Prevent duplicate messages.
-           *
-           * This is useful because the REST API and
-           * WebSocket can both contain the same message.
-           */
           const alreadyExists =
             previousMessages.some(
               (message) =>
@@ -105,11 +112,6 @@ function ChatWindow({
             return previousMessages;
           }
 
-          console.log(
-            "🔥 Adding WebSocket message to UI:",
-            incomingMessage
-          );
-
           return [
             ...previousMessages,
             incomingMessage
@@ -117,7 +119,29 @@ function ChatWindow({
 
         });
 
-      }
+      },
+
+      // =========================
+      // TYPING RECEIVED
+      // =========================
+
+      (typingStatus: TypingStatus) => {
+
+  console.log(
+    "🔥 TYPING EVENT RECEIVED IN REACT = ",
+    typingStatus
+  );
+
+  if (typingStatus.senderId !== userId) {
+    console.log("senderId:", typingStatus.senderId);
+console.log("current chat userId:", userId);
+    console.log("Typing event ignored");
+    return;
+  }
+
+  setIsTyping(typingStatus.typing);
+}
+
     );
 
     return () => {
@@ -167,6 +191,59 @@ function ChatWindow({
 
 
   /*
+   * 🔥 NEW
+   *
+   * User is typing
+   */
+  const handleTyping = (
+    value: string
+  ) => {
+
+    setContent(value);
+
+    // If input is empty,
+    // tell the other user we stopped typing.
+    if (!value.trim()) {
+
+      sendTypingStatus(
+        userId,
+        false
+      );
+
+      return;
+    }
+
+    // Tell receiver we are typing.
+    sendTypingStatus(
+      userId,
+      true
+    );
+
+    // Clear previous timeout.
+    if (typingTimeoutRef.current) {
+
+      clearTimeout(
+        typingTimeoutRef.current
+      );
+
+    }
+
+    // If no typing happens for 1.5 seconds,
+    // tell receiver that typing stopped.
+    typingTimeoutRef.current =
+      setTimeout(() => {
+
+        sendTypingStatus(
+          userId,
+          false
+        );
+
+      }, 1500);
+
+  };
+
+
+  /*
    * Send live message
    */
   const sendMessage = () => {
@@ -183,19 +260,16 @@ function ChatWindow({
       trimmedContent
     );
 
+    // Stop typing indicator
+    sendTypingStatus(
+      userId,
+      false
+    );
+
     sendWebSocketMessage(
       userId,
       trimmedContent
     );
-
-    // 🔥 CHANGED
-    // Do NOT add the message here.
-    //
-    // Backend saves the message and sends it
-    // back through WebSocket.
-    //
-    // The WebSocket callback above will update
-    // the UI.
 
     setContent("");
 
@@ -222,7 +296,14 @@ function ChatWindow({
 
           <h3>{username}</h3>
 
-          <span>online</span>
+          {/* 🔥 NEW */}
+          {isTyping ? (
+            <span className="typing-indicator">
+              typing...
+            </span>
+          ) : (
+            <span>online</span>
+          )}
 
         </div>
 
@@ -233,58 +314,56 @@ function ChatWindow({
 
       <div className="messages">
 
-        {messages.map((message) => {
+  {messages.map((message) => {
+    const isMine =
+      message.senderId === currentUserId;
 
-          const isMine =
-            message.senderId === currentUserId;
+    return (
+      <div
+        key={message.id}
+        className={`message-row ${
+          isMine
+            ? "sent-row"
+            : "received-row"
+        }`}
+      >
+        <div
+          className={`message ${
+            isMine
+              ? "sent"
+              : "received"
+          }`}
+        >
+          <div className="message-content">
+            {message.content}
+          </div>
 
-          return (
-
-            <div
-              key={message.id}
-              className={`message-row ${
-                isMine
-                  ? "sent-row"
-                  : "received-row"
-              }`}
-            >
-
-              <div
-                className={`message ${
-                  isMine
-                    ? "sent"
-                    : "received"
-                }`}
-              >
-
-                <div className="message-content">
-
-                  {message.content}
-
-                </div>
-
-                <div className="message-time">
-
-                  {new Date(
-                    message.createdAt
-                  ).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  })}
-
-                </div>
-
-              </div>
-
-            </div>
-
-          );
-
-        })}
-
-        <div ref={messagesEndRef} />
-
+          <div className="message-time">
+            {new Date(
+              message.createdAt
+            ).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit"
+            })}
+          </div>
+        </div>
       </div>
+    );
+  })}
+
+  {isTyping && (
+    <div className="typing-message-row">
+      <div className="typing-bubble">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  )}
+
+  <div ref={messagesEndRef} />
+
+</div>
 
 
       {/* INPUT */}
@@ -295,13 +374,18 @@ function ChatWindow({
           type="text"
           placeholder="Type a message"
           value={content}
+
+          // 🔥 CHANGED
           onChange={(e) =>
-            setContent(e.target.value)
+            handleTyping(e.target.value)
           }
+
           onKeyDown={(e) => {
 
             if (e.key === "Enter") {
+
               sendMessage();
+
             }
 
           }}
